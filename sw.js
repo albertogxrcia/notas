@@ -1,6 +1,7 @@
 // Guarda la app para que abra sin conexión. Los datos van por IndexedDB, no por aquí.
-const V = 'notas-v1';
-const SHELL = ['./', 'index.html', 'style.css', 'app.js', 'config.js', 'vendor/supabase.js', 'manifest.webmanifest', 'icon.svg', 'icon-192.png', 'icon-512.png'];
+const V = 'notas-v2';
+const LIB = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.112.4/dist/umd/supabase.js';
+const SHELL = ['./', 'index.html', 'style.css', 'app.js', 'config.js', LIB, 'manifest.webmanifest', 'icon.svg', 'icon-192.png', 'icon-512.png'];
 self.addEventListener('install', (e) => { e.waitUntil(caches.open(V).then((c) => c.addAll(SHELL))); self.skipWaiting(); });
 self.addEventListener('activate', (e) => {
   e.waitUntil(caches.keys().then((ks) => Promise.all(ks.filter((k) => k !== V).map((k) => caches.delete(k)))));
@@ -8,7 +9,7 @@ self.addEventListener('activate', (e) => {
 });
 self.addEventListener('fetch', (e) => {
   const u = new URL(e.request.url);
-  if (e.request.method !== 'GET' || u.origin !== location.origin) return;
+  if (e.request.method !== 'GET' || (u.origin !== location.origin && e.request.url !== LIB)) return;
   // Primero lo guardado (abre al instante) y se actualiza por detrás
   e.respondWith(caches.open(V).then(async (c) => {
     const hit = await c.match(e.request, { ignoreSearch: true });

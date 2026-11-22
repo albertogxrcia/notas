@@ -12,8 +12,8 @@ const json = (o: unknown, status = 200) =>
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: cors });
-  const scriptUrl = Deno.env.get('GCAL_SCRIPT_URL'), secret = Deno.env.get('GCAL_SECRET');
-  if (!scriptUrl || !secret) return json({ error: 'Google Calendar sin conectar' }, 503);
+  const scriptUrl = Deno.env.get('GCAL_SCRIPT_URL');
+  if (!scriptUrl) return json({ error: 'Google Calendar sin conectar' }, 503);
 
   const sb = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_ANON_KEY')!, {
     global: { headers: { Authorization: req.headers.get('Authorization') ?? '' } },
@@ -49,7 +49,7 @@ Deno.serve(async (req) => {
     cancel: !l.remind_at || l.done || l.deleted > 0 || (noteDeleted.get(l.parent_id) ?? 0) > 0,
   }));
 
-  const r = await fetch(scriptUrl, { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: JSON.stringify({ secret, events }) });
+  const r = await fetch(scriptUrl, { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: JSON.stringify({ events }) });
   const text = await r.text();
   let out;
   try { out = JSON.parse(text); } catch { return json({ error: 'El Apps Script no devolvió JSON', status: r.status }, 502); }

@@ -4,13 +4,12 @@
  * Implementar > Nueva implementación > Tipo: Aplicación web > Ejecutar como: Yo > Acceso: Cualquier usuario.
  * Crea (una vez) un calendario "Notas" en tu Google Calendar y pone ahí cada recordatorio,
  * con aviso emergente a la hora exacta. Si marcas la tarea como hecha o la borras, el evento se va.
+ * La URL de publicación (larga y aleatoria) es la llave: solo la conoce la función gcal de Supabase.
  */
-const SECRET = '__GCAL_SECRET__';
 const CAL_NAME = 'Notas';
 
 function doPost(e) {
   const body = JSON.parse(e.postData.contents);
-  if (body.secret !== SECRET) return json({ error: 'no autorizado' });
   const lock = LockService.getScriptLock();
   lock.waitLock(20000);
   try {

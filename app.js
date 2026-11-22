@@ -15,7 +15,7 @@ const CFG = window.NOTAS_CONFIG || {};
 const HAS_CLOUD = !!(CFG.url && CFG.anonKey && window.supabase);
 const $ = (s) => document.querySelector(s);
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-const norm = (s) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+const norm = (s) => s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
 const isMac = /Mac|iPhone|iPad/.test(navigator.platform);
 const icon = (id) => `<svg><use href="#i-${id}"/></svg>`;
 const DAY = 864e5;
