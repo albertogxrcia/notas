@@ -29,11 +29,15 @@ python3 -m http.server 5173 --bind 127.0.0.1
 ```
 Abre `http://127.0.0.1:5173` y `http://localhost:5173`: son dos «dispositivos» distintos.
 
-## Ponerla en marcha de verdad
+## En producción
 
-1. **Supabase**: un proyecto en tu cuenta, aplicar `supabase/migrations`, desplegar la función
-   `gcal` y meter `GCAL_SECRET` y `GCAL_SCRIPT_URL` como secretos de la función.
-2. **Google Calendar**: pegar `google/Codigo.gs` en script.google.com, publicarlo como «Aplicación
-   web» (Ejecutar como: yo · Acceso: cualquier usuario) y poner la URL en `.env`.
-3. **config.js** con la URL y la clave pública del proyecto, y publicar la carpeta (Vercel).
-4. Crear tu cuenta desde la app y **cerrar el registro** en Supabase para que nadie más entre.
+- **App**: https://albertogxrcia.github.io/notas/ (GitHub Pages; se actualiza con `git push` a `main`).
+- **Base de datos**: proyecto `notas` de Supabase. Cambios de esquema: nueva migración en
+  `supabase/migrations` y `supabase db push`.
+- **Función `gcal`**: `supabase functions deploy gcal --use-api`. Su único secreto es
+  `GCAL_SCRIPT_URL` (la URL del Apps Script, que hace de llave).
+- **Google Calendar**: Apps Script «Notas Calendar» en tu cuenta, publicado como «Aplicación web»
+  (Ejecutar como: yo · Acceso: cualquier usuario). Si se vuelve a publicar con otra URL, cambia
+  `.env` y el secreto de la función.
+- `config.js` lleva la URL del proyecto y su clave pública (es pública por diseño; los datos los
+  protege el inicio de sesión y las reglas de la tabla).
