@@ -29,6 +29,12 @@
     <symbol id="i-chev" viewBox="0 0 24 24"><path d="M9.5 6l6 6-6 6"/></symbol>
     <symbol id="i-search" viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6.2"/><path d="M15.2 15.2l4.8 4.8"/></symbol>
     <symbol id="i-move" viewBox="0 0 24 24"><path d="M3 7.5A1.5 1.5 0 0 1 4.5 6H9l2 2h8.5A1.5 1.5 0 0 1 21 9.5v8a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 17.5z"/><path d="M9.5 13.5h5.5M13 11.2l2.3 2.3-2.3 2.3"/></symbol>
+    <symbol id="i-plus-circle" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.8"/><path d="M12 8v8M8 12h8"/></symbol>
+    <symbol id="i-flag" viewBox="0 0 24 24"><path d="M6 21V4.5c3.5-2 6 1.6 12 0v9c-6 1.6-8.5-2-12 0"/></symbol>
+    <symbol id="i-repeat" viewBox="0 0 24 24"><path d="M17 3.5l3 3-3 3"/><path d="M4 11.5V9.5a3 3 0 0 1 3-3h13"/><path d="M7 20.5l-3-3 3-3"/><path d="M20 12.5v2a3 3 0 0 1-3 3H4"/></symbol>
+    <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.2V12l3.2 2"/></symbol>
+    <symbol id="i-more" viewBox="0 0 24 24"><circle cx="5.5" cy="12" r="1.1" fill="currentColor"/><circle cx="12" cy="12" r="1.1" fill="currentColor"/><circle cx="18.5" cy="12" r="1.1" fill="currentColor"/></symbol>
+    <symbol id="i-details" viewBox="0 0 24 24"><path d="M4.5 7h15M4.5 12h15M4.5 17h9"/></symbol>
   </defs>
 </svg>
 
@@ -68,7 +74,6 @@
     <div class="scroll">
       <input id="listTitle" class="big bigin" readonly>
       <label class="search"><svg><use href="#i-search"/></svg><input id="search" type="search" placeholder="Buscar" autocomplete="off"></label>
-      <form id="quickTask" class="quicktask" hidden><span class="chk"></span><input id="quickTaskInput" placeholder="Nueva tarea" autocomplete="off"></form>
       <div id="notes"></div>
     </div>
     <footer class="tb">
@@ -137,5 +142,6 @@
 <script src="config.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.112.4/dist/umd/supabase.js" integrity="sha384-ysv13JVP3fufiEXfjML9OdCa/rRbMJvUBOWyor82wfuK8INNZAvmbxHgKIHi+oqz" crossorigin="anonymous"></script>
 <script src="app.js"></script>
+<script src="tasks.js"></script>
 </body>
 </html>

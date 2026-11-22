@@ -26,7 +26,7 @@ Deno.serve(async (req) => {
 
   // Con la sesión del usuario: solo ve sus filas (RLS)
   const { data: lines, error } = await sb.from('items')
-    .select('id,parent_id,text,done,deleted,remind_at').in('id', ids.slice(0, 200));
+    .select('id,kind,parent_id,text,details,done,deleted,remind_at').in('id', ids.slice(0, 200));
   if (error) return json({ error: error.message }, 500);
   const noteIds = [...new Set(lines.map((l) => l.parent_id).filter(Boolean))];
   const { data: rel } = noteIds.length
@@ -36,6 +36,7 @@ Deno.serve(async (req) => {
   const firstPos = new Map<string, string>();
   for (const r of rel ?? []) {
     if (r.kind === 'note') noteDeleted.set(r.id, r.deleted);
+    else if (r.kind === 'list') { noteDeleted.set(r.id, r.deleted); title.set(r.id, r.text); }
     else if (r.kind === 'line' && !r.deleted) {
       const p = firstPos.get(r.parent_id);
       if (p === undefined || r.pos < p || (r.pos === p)) { firstPos.set(r.parent_id, r.pos); title.set(r.parent_id, r.text); }
@@ -45,7 +46,9 @@ Deno.serve(async (req) => {
     id: l.id,
     title: l.text.trim() || 'Recordatorio',
     start: l.remind_at,
-    description: `De la nota «${(title.get(l.parent_id) ?? '').trim() || 'Nota'}»`,
+    description: l.kind === 'task'
+      ? [l.details, `Lista «${(title.get(l.parent_id) ?? '').trim() || 'Mis tareas'}»`].filter(Boolean).join('\n\n')
+      : `De la nota «${(title.get(l.parent_id) ?? '').trim() || 'Nota'}»`,
     cancel: !l.remind_at || l.done || l.deleted > 0 || (noteDeleted.get(l.parent_id) ?? 0) > 0,
   }));
 

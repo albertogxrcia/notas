@@ -84,16 +84,17 @@ function touch(it) {
   children = null; persistSoon(); syncSoon();
 }
 function create(kind, fields) {
-  const it = { id: crypto.randomUUID(), kind, parent_id: null, pos: '', text: '', task: false, done: false, pinned: false, deleted: 0, remind_at: null, ...fields };
+  const it = { id: crypto.randomUUID(), kind, parent_id: null, pos: '', text: '', task: false, done: false, pinned: false, deleted: 0, remind_at: null, details: '', repeat: null, allday: false, color: null, ...fields };
   touch(it); if (it.remind_at) S.gcal.add(it.id); return it;
 }
 function update(it, patch) {
   let changed = false;
-  const hadRemind = it.kind === 'line' && it.remind_at;
+  const remindable = it.kind === 'line' || it.kind === 'task';
+  const hadRemind = remindable && it.remind_at;
   for (const k in patch) if (it[k] !== patch[k]) { it[k] = patch[k]; changed = true; }
   if (!changed) return;
   touch(it);
-  if (it.kind === 'line' && (hadRemind || it.remind_at)) S.gcal.add(it.id);
+  if (remindable && (hadRemind || it.remind_at)) S.gcal.add(it.id);
   if (it.kind === 'note' && 'deleted' in patch) for (const l of kids(it.id)) if (l.remind_at) S.gcal.add(l.id);
 }
 
@@ -138,7 +139,7 @@ let syncTimer = null, syncing = false, again = false, backoff = 2000, channel = 
 function syncSoon(ms = 700) { clearTimeout(syncTimer); syncTimer = setTimeout(sync, ms); }
 function setStatus(s, title) { const el = $('#sync'); el.className = 'sync ' + s; el.title = title; }
 const newer = (a, b) => a.updated_at > b.updated_at || (a.updated_at === b.updated_at && a.device > b.device);
-const FIELDS = ['id', 'kind', 'parent_id', 'pos', 'text', 'task', 'done', 'pinned', 'deleted', 'remind_at', 'updated_at', 'device'];
+const FIELDS = ['id', 'kind', 'parent_id', 'pos', 'text', 'task', 'done', 'pinned', 'deleted', 'remind_at', 'details', 'repeat', 'allday', 'color', 'updated_at', 'device'];
 
 async function sync() {
   if (!S.sb || !S.session) { setStatus('off', HAS_CLOUD ? 'Sin sesión' : 'Solo en este dispositivo'); return; }
@@ -190,11 +191,11 @@ async function sync() {
 
 async function pushCalendar() {
   const ids = [...S.gcal].filter((id) => !S.outbox.has(id));
-  if (!ids.length || gcalState === 'off') return;
+  if (!ids.length) return; // si falla, quedan pendientes y se reintenta en la siguiente sincronización
   const { data, error } = await S.sb.functions.invoke('gcal', { body: { ids } });
   if (error) {
     const status = error.context && error.context.status;
-    if (status === 503) { gcalState = 'off'; renderGcal(); return; } // aún sin conectar: se guardan para luego
+    if (status === 503) { gcalState = 'off'; renderGcal(); return; }
     console.warn('[notas] gcal', error); return;
   }
   gcalState = 'on'; renderGcal();
@@ -234,6 +235,7 @@ document.querySelectorAll('[data-go]').forEach((b) => b.addEventListener('click'
 }));
 
 function selectFolder(f) {
+  if (f === 'tasks') { leaveNote(); S.view.note = null; } else if (T.editing) closeEdit();
   S.view.folder = f; $('#search').value = ''; S.view.q = '';
   render(); go('list');
 }
@@ -248,6 +250,7 @@ function leaveNote() {
   if (n && n.deleted === 0 && isEmptyNote(n)) purgeNote(n); // como Notas: una nota vacía no se queda
 }
 function newNote() {
+  if (S.view.folder === 'tasks') { addTask(T.current || defaultListId()); return; } // en Tareas, el lápiz añade una tarea
   const fo = S.items.get(S.view.folder);
   const parent = fo && fo.kind === 'folder' ? fo.id : null;
   if (S.view.folder === 'trash' || S.view.folder === 'tasks') S.view.folder = 'all';
@@ -298,7 +301,7 @@ function render() {
   requestAnimationFrame(() => { renderQueued = false; renderSide(); renderList(); renderEditor(false); });
 }
 
-const openTaskLines = () => [...S.items.values()].filter((l) => l.kind === 'line' && l.task && !l.done && !l.deleted && S.items.get(l.parent_id)?.deleted === 0);
+const openTaskLines = () => [...S.items.values()].filter((l) => !l.done && !l.deleted && ((l.kind === 'line' && l.task && S.items.get(l.parent_id)?.deleted === 0) || l.kind === 'task'));
 
 function renderSide() {
   const ns = notes();
@@ -334,10 +337,10 @@ function renderList() {
   $('#listTitleSmall').textContent = title;
   $('#backName').textContent = title;
   $('#folderDelBtn').hidden = !isFolder;
-  $('#quickTask').hidden = f !== 'tasks';
+  app.classList.toggle('boardmode', f === 'tasks');
   const q = norm(S.view.q.trim());
 
-  if (f === 'tasks') return renderTasks(q);
+  if (f === 'tasks') return renderBoard(q);
 
   const ns = notes().filter((n) => (f === 'trash' ? n.deleted === 1 : n.deleted === 0) && (!isFolder || n.parent_id === f));
   let infos = ns.map((n) => ({ n, ...noteInfo(n) }));
@@ -364,26 +367,6 @@ function renderList() {
 }
 
 const recentlyDone = new Set();
-function renderTasks(q) {
-  const match = (l) => (!l.done || recentlyDone.has(l.id)) && (!q || norm(l.text).includes(q));
-  const lines = [...S.items.values()].filter((l) => l.kind === 'line' && l.task && !l.deleted && S.items.get(l.parent_id)?.deleted === 0 && match(l));
-  const titleOf = new Map();
-  const tOf = (id) => { if (!titleOf.has(id)) titleOf.set(id, noteInfo(S.items.get(id)).title); return titleOf.get(id); };
-  const row = (l, from) => `<div class="trow${l.done ? ' gone' : ''}"><button class="chk${l.done ? ' done' : ''}" data-t="${l.id}" aria-label="Hecha"></button>
-      <span class="tx">${esc(l.text) || '&nbsp;'}${from ? `<span class="from">${esc(tOf(l.parent_id))}</span>` : ''}</span>${l.remind_at ? remChip(l) : ''}</div>`;
-  const timed = lines.filter((l) => l.remind_at).sort((a, b) => a.remind_at - b.remind_at);
-  const rest = lines.filter((l) => !l.remind_at);
-  const groups = new Map();
-  for (const l of rest) { if (!groups.has(l.parent_id)) groups.set(l.parent_id, []); groups.get(l.parent_id).push(l); }
-  let h = '';
-  if (timed.length) h += `<div class="tgroup"><div class="gt">Con aviso</div>${timed.map((l) => row(l, true)).join('')}</div>`;
-  const gs = [...groups.entries()].map(([nid, ls]) => ({ nid, ls: ls.sort(byPos), mod: noteInfo(S.items.get(nid)).mod })).sort((a, b) => b.mod - a.mod);
-  for (const g of gs) h += `<div class="tgroup"><button class="gt" data-n="${g.nid}">${esc(tOf(g.nid))}</button>${g.ls.map((l) => row(l, false)).join('')}</div>`;
-  $('#notes').innerHTML = h || `<div class="nores">${q ? 'Ningún resultado' : 'Ninguna tarea pendiente'}</div>`;
-  const c = lines.filter((l) => !l.done).length;
-  const count = c === 1 ? '1 tarea' : `${c} tareas`;
-  $('#listCount').textContent = count; $('#countFoot').textContent = count;
-}
 
 /* ---------- Editor ---------- */
 const linesEl = $('#lines');
@@ -686,24 +669,15 @@ $('#folderDelBtn').addEventListener('click', () => {
   update(f, { deleted: 2 });
   selectFolder('all');
 });
-$('#quickTask').addEventListener('submit', (e) => {
-  e.preventDefault();
-  const text = $('#quickTaskInput').value.trim(); if (!text) return;
-  $('#quickTaskInput').value = '';
-  // Las tareas rápidas van a una nota "Tareas" (la crea si no existe)
-  let inbox = notes().find((n) => n.deleted === 0 && noteInfo(n).title === 'Tareas');
-  if (!inbox) { inbox = create('note', {}); create('line', { parent_id: inbox.id, pos: between('', ''), text: 'Tareas' }); }
-  const ls = linesOf(inbox.id);
-  const firstDone = ls.findIndex((l, k) => k > 0 && l.task && l.done);
-  const pos = firstDone > 0 ? between(ls[firstDone - 1].pos, ls[firstDone].pos) : between(ls[ls.length - 1].pos, '');
-  create('line', { parent_id: inbox.id, pos, text, task: true });
-  renderList(); renderSide();
-});
 $('#exportBtn').addEventListener('click', () => {
   let md = '';
   for (const n of notes().filter((n) => n.deleted === 0)) {
     md += linesOf(n.id).map((l, i) => (i === 0 ? '# ' : '') + (l.task ? `- [${l.done ? 'x' : ' '}] ` : '') + l.text +
       (l.remind_at ? ` (aviso: ${new Date(l.remind_at).toLocaleString('es-ES')})` : '')).join('\n') + '\n\n---\n\n';
+  }
+  for (const l of taskLists()) {
+    const ts = tasksOf(l.id);
+    if (ts.length) md += `# ${l.text}\n` + ts.sort(byPos).map((t) => `- [${t.done ? 'x' : ' '}] ${t.text}` + (t.remind_at ? ` (${new Date(t.remind_at).toLocaleString('es-ES')})` : '') + (t.details ? `\n  ${t.details}` : '')).join('\n') + '\n\n---\n\n';
   }
   const a = document.createElement('a');
   a.href = URL.createObjectURL(new Blob([md], { type: 'text/markdown' }));
