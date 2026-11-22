@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
+<title>Notas</title>
+<meta name="theme-color" content="#f2f2f7" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icon-192.png">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <symbol id="i-folder" viewBox="0 0 24 24"><path d="M3 7.5A1.5 1.5 0 0 1 4.5 6H9l2 2h8.5A1.5 1.5 0 0 1 21 9.5v8a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 17.5z"/></symbol>
+    <symbol id="i-folder-plus" viewBox="0 0 24 24"><path d="M3 7.5A1.5 1.5 0 0 1 4.5 6H9l2 2h8.5A1.5 1.5 0 0 1 21 9.5v8a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 17.5z"/><path d="M12 11v5M9.5 13.5h5"/></symbol>
+    <symbol id="i-compose" viewBox="0 0 24 24"><path d="M11 4H5.5A1.5 1.5 0 0 0 4 5.5v13A1.5 1.5 0 0 0 5.5 20h13a1.5 1.5 0 0 0 1.5-1.5V13"/><path d="M17.6 3.4a2 2 0 0 1 2.9 2.9L12 14.8l-3.6.8.8-3.6z"/></symbol>
+    <symbol id="i-trash" viewBox="0 0 24 24"><path d="M4.5 6.5h15M10 10.5v6M14 10.5v6M6.5 6.5l.8 12a1.8 1.8 0 0 0 1.8 1.7h5.8a1.8 1.8 0 0 0 1.8-1.7l.8-12M9.5 6.5V4.3h5v2.2"/></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24"><circle cx="6.5" cy="7.5" r="2.4"/><path d="M5.4 16.3l1 1 1.9-2.1"/><circle cx="6.8" cy="16.5" r="2.4"/><path d="M11.5 7.5H20M11.5 16.5H20"/></symbol>
+    <symbol id="i-bell" viewBox="0 0 24 24"><path d="M6.2 16.5V11a5.8 5.8 0 0 1 11.6 0v5.5l1.6 1.9H4.6z"/><path d="M10 20.3a2.1 2.1 0 0 0 4 0"/></symbol>
+    <symbol id="i-pin" viewBox="0 0 24 24"><path d="M9 3.5h6l-.9 5.6 3.1 3v2.1H6.8v-2.1l3.1-3z"/><path d="M12 14.2V21"/></symbol>
+    <symbol id="i-tasks" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M8.4 12.2l2.5 2.5 4.8-5.1"/></symbol>
+    <symbol id="i-notes" viewBox="0 0 24 24"><rect x="5" y="3.5" width="14" height="17" rx="2"/><path d="M8.5 8h7M8.5 12h7M8.5 16h4"/></symbol>
+    <symbol id="i-back" viewBox="0 0 24 24"><path d="M15 4.5L7.5 12l7.5 7.5"/></symbol>
+    <symbol id="i-chev" viewBox="0 0 24 24"><path d="M9.5 6l6 6-6 6"/></symbol>
+    <symbol id="i-search" viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6.2"/><path d="M15.2 15.2l4.8 4.8"/></symbol>
+    <symbol id="i-move" viewBox="0 0 24 24"><path d="M3 7.5A1.5 1.5 0 0 1 4.5 6H9l2 2h8.5A1.5 1.5 0 0 1 21 9.5v8a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 17.5z"/><path d="M9.5 13.5h5.5M13 11.2l2.3 2.3-2.3 2.3"/></symbol>
+  </defs>
+</svg>
+
+<div id="app" data-pane="list">
+  <!-- Carpetas -->
+  <aside id="side" class="pane">
+    <header class="bar"><span class="spacer"></span><span id="sync" class="sync" title="Sincronización"></span></header>
+    <div class="scroll">
+      <h1 class="big">Carpetas</h1>
+      <div class="group-h">Notas</div>
+      <nav id="folders" class="group"></nav>
+      <form id="newFolderForm" class="newfolder" hidden><input id="newFolderInput" placeholder="Nombre de la carpeta" autocomplete="off"></form>
+      <div class="sidefoot">
+        <button id="exportBtn" class="link">Descargar copia</button>
+        <button id="gcalBtn" class="link" hidden></button>
+        <button id="logoutBtn" class="link" hidden>Cerrar sesión</button>
+      </div>
+    </div>
+    <footer class="tb">
+      <button class="ib" data-act="newFolder" title="Nueva carpeta"><svg><use href="#i-folder-plus"/></svg></button>
+      <span class="spacer"></span>
+      <button class="ib" data-act="newNote" title="Nota nueva"><svg><use href="#i-compose"/></svg></button>
+    </footer>
+  </aside>
+
+  <!-- Lista de notas -->
+  <section id="list" class="pane">
+    <header class="bar">
+      <button class="backb" data-go="side"><svg><use href="#i-back"/></svg>Carpetas</button>
+      <div class="dtitle"><b id="listTitleSmall"></b><small id="listCount"></small></div>
+      <span class="spacer"></span>
+      <button class="ib desk" data-act="newFolder" title="Nueva carpeta"><svg><use href="#i-folder-plus"/></svg></button>
+      <button class="ib" id="folderDelBtn" title="Eliminar carpeta" hidden><svg><use href="#i-trash"/></svg></button>
+      <button class="ib desk" data-act="newNote" title="Nota nueva (⌘N)"><svg><use href="#i-compose"/></svg></button>
+    </header>
+    <div class="scroll">
+      <input id="listTitle" class="big bigin" readonly>
+      <label class="search"><svg><use href="#i-search"/></svg><input id="search" type="search" placeholder="Buscar" autocomplete="off"></label>
+      <form id="quickTask" class="quicktask" hidden><span class="chk"></span><input id="quickTaskInput" placeholder="Nueva tarea" autocomplete="off"></form>
+      <div id="notes"></div>
+    </div>
+    <footer class="tb">
+      <span class="spacer"></span><span id="countFoot" class="countfoot"></span><span class="spacer"></span>
+      <button class="ib" data-act="newNote" title="Nota nueva"><svg><use href="#i-compose"/></svg></button>
+    </footer>
+  </section>
+
+  <!-- Editor -->
+  <main id="editor" class="pane">
+    <header class="bar">
+      <button class="backb" data-go="list"><svg><use href="#i-back"/></svg><span id="backName">Notas</span></button>
+      <span class="spacer"></span>
+      <button class="ib desk" data-act="task" title="Lista de tareas (⌘⇧L)"><svg><use href="#i-check"/></svg></button>
+      <button class="ib desk" data-act="remind" title="Recordatorio"><svg><use href="#i-bell"/></svg></button>
+      <button class="ib" data-act="pin" title="Fijar"><svg><use href="#i-pin"/></svg></button>
+      <label class="ib movesel" title="Mover a carpeta"><svg><use href="#i-move"/></svg><select id="moveSel"></select></label>
+      <button class="ib" data-act="delete" title="Eliminar"><svg><use href="#i-trash"/></svg></button>
+      <button class="ib desk" data-act="newNote" title="Nota nueva (⌘N)"><svg><use href="#i-compose"/></svg></button>
+    </header>
+    <div id="trashBar" class="trashbar" hidden>
+      <span>En Eliminadas</span>
+      <button id="restoreBtn" class="link">Recuperar</button>
+      <button id="purgeBtn" class="link danger">Borrar del todo</button>
+    </div>
+    <div id="scroller" class="scroll">
+      <div id="noteDate" class="notedate"></div>
+      <div id="lines"></div>
+    </div>
+    <div id="empty" class="empty">No hay ninguna nota seleccionada</div>
+    <footer class="tb">
+      <button class="ib" data-act="task" title="Lista de tareas"><svg><use href="#i-check"/></svg></button>
+      <span class="spacer"></span>
+      <button class="ib" data-act="remind" title="Recordatorio"><svg><use href="#i-bell"/></svg></button>
+      <span class="spacer"></span>
+      <button class="ib" data-act="newNote" title="Nota nueva"><svg><use href="#i-compose"/></svg></button>
+    </footer>
+  </main>
+</div>
+
+<!-- Menú de recordatorio -->
+<div id="remindMenu" class="menu" hidden>
+  <div class="menu-h">Recordármelo</div>
+  <button data-r="later">Dentro de 1 hora</button>
+  <button data-r="evening">Hoy a las 18:00</button>
+  <button data-r="tomorrow">Mañana a las 9:00</button>
+  <button data-r="monday">El lunes a las 9:00</button>
+  <label class="pick">Elegir día y hora<input id="picker" type="datetime-local"></label>
+  <button data-r="none" class="danger">Quitar recordatorio</button>
+</div>
+<div id="veil" hidden></div>
+
+<div id="auth" hidden>
+  <form id="authForm">
+    <div class="authicon"><img src="icon.svg" alt=""></div>
+    <h1>Notas</h1>
+    <p>Entra para tener tus notas en todos tus dispositivos.</p>
+    <input id="authEmail" type="email" placeholder="Email" autocomplete="username" required>
+    <input id="authPass" type="password" placeholder="Contraseña" autocomplete="current-password" minlength="6" required>
+    <button type="submit" class="primarybtn">Entrar</button>
+    <button type="button" id="signupBtn" class="link">Crear cuenta</button>
+    <p id="authMsg" class="msg"></p>
+  </form>
+</div>
+
+<script src="config.js"></script>
+<script src="vendor/supabase.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
