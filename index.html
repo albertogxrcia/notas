@@ -11,6 +11,7 @@
 <link rel="icon" href="icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="icon-192.png">
 <link rel="stylesheet" href="style.css">
+<script>try { const t = localStorage.getItem('notas-tema'); if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t; } catch (_) {}</script>
 </head>
 <body>
 <svg width="0" height="0" style="position:absolute" aria-hidden="true">
@@ -41,6 +42,7 @@
       <nav id="folders" class="group"></nav>
       <form id="newFolderForm" class="newfolder" hidden><input id="newFolderInput" placeholder="Nombre de la carpeta" autocomplete="off"></form>
       <div class="sidefoot">
+        <button id="themeBtn" class="link">Tema: Automático</button>
         <button id="exportBtn" class="link">Descargar copia</button>
         <button id="gcalBtn" class="link" hidden></button>
         <button id="logoutBtn" class="link" hidden>Cerrar sesión</button>

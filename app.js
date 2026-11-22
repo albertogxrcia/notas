@@ -717,6 +717,24 @@ document.addEventListener('keydown', (e) => {
   if (mod && !e.shiftKey && e.key.toLowerCase() === 'f') { e.preventDefault(); go('list'); $('#search').focus(); }
 });
 
+/* ---------- Tema: automático, claro u oscuro (cada dispositivo recuerda el suyo) ---------- */
+const THEMES = { auto: 'Automático', light: 'Claro', dark: 'Oscuro' };
+const darkQuery = matchMedia('(prefers-color-scheme: dark)');
+function getTheme() { try { return localStorage.getItem('notas-tema') || 'auto'; } catch (_) { return 'auto'; } }
+function applyTheme(t) {
+  if (t === 'auto') delete document.documentElement.dataset.theme; else document.documentElement.dataset.theme = t;
+  $('#themeBtn').textContent = 'Tema: ' + THEMES[t];
+  const dark = t === 'dark' || (t === 'auto' && darkQuery.matches);
+  document.querySelectorAll('meta[name="theme-color"]').forEach((m) => { m.content = dark ? '#000000' : '#f2f2f7'; });
+}
+$('#themeBtn').addEventListener('click', () => {
+  const keys = Object.keys(THEMES), next = keys[(keys.indexOf(getTheme()) + 1) % keys.length];
+  try { localStorage.setItem('notas-tema', next); } catch (_) {}
+  applyTheme(next);
+});
+darkQuery.addEventListener('change', () => applyTheme(getTheme()));
+applyTheme(getTheme());
+
 /* ---------- Acceso ---------- */
 async function authSubmit(signup) {
   const email = $('#authEmail').value.trim(), password = $('#authPass').value;

@@ -17,8 +17,27 @@
   --chip: #f5ecd0;
   color-scheme: light;
 }
+/* Oscuro: por elección (data-theme="dark") o porque el sistema lo pide y no se eligió claro */
+:root[data-theme="dark"] {
+  --side: #262627;
+  --pane: #1e1e1e;
+  --bg: #000000;
+  --card: #1c1c1e;
+  --sep: #38383a;
+  --text: #f5f5f7;
+  --muted: #98989d;
+  --tint: #ffcc0a;
+  --tint-strong: #ffd60a;
+  --sel: #5f4d14;
+  --side-sel: #3a3a3c;
+  --hover: rgba(255, 255, 255, .06);
+  --danger: #ff453a;
+  --ok: #30d158;
+  --chip: #3b3216;
+  color-scheme: dark;
+}
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme="light"]) {
     --side: #262627;
     --pane: #1e1e1e;
     --bg: #000000;
@@ -129,7 +148,8 @@ svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width:
   display: none; flex: none; width: 19px; height: 19px; margin-top: 2px; border-radius: 50%;
   border: 1.5px solid #b9b9bd; position: relative;
 }
-@media (prefers-color-scheme: dark) { .chk { border-color: #6b6b70; } }
+:root[data-theme="dark"] .chk { border-color: #6b6b70; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .chk { border-color: #6b6b70; } }
 .line.task .chk, .trow .chk, .quicktask .chk { display: block; }
 .chk.done, .line.done .chk { background: var(--tint); border-color: var(--tint); }
 .chk.done::after, .line.done .chk::after {
