@@ -41,3 +41,14 @@ Abre `http://127.0.0.1:5173` y `http://localhost:5173`: son dos «dispositivos»
   `.env` y el secreto de la función.
 - `config.js` lleva la URL del proyecto y su clave pública (es pública por diseño; los datos los
   protege el inicio de sesión y las reglas de la tabla).
+
+## Conexión con Claude
+
+`mcp/server.mjs` es un puente MCP local registrado en los cuatro Claude Code del Mac con el nombre `notas`.
+Lee la llave del `.env` (en la base solo está su huella) y habla con la función `api`. Puede buscar, leer,
+crear y editar notas y tareas, poner avisos y adjuntar ficheros. A propósito no tiene herramienta de borrar.
+
+## Importar de Google Tasks
+
+`node scripts/importar-google-tasks.mjs [takeout.zip]` enseña el recuento; con `--aplica` escribe.
+Se puede repetir sin duplicar. No crea eventos en Calendar: Google ya muestra allí sus tareas con fecha.
