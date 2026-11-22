@@ -704,6 +704,26 @@ async function attachFiles(list) {
   renderEditor(false); renderListSoon();
   if (target && !target.file) focusLine(target.id, 0);
 }
+// En el APK los ficheros pasan por el puente nativo (WebView no descarga enlaces blob:)
+async function saveBlob(blob, name, open = false) {
+  const nat = window.NotasAndroid;
+  if (!nat) {
+    const a = document.createElement('a'), url = URL.createObjectURL(blob);
+    a.href = url; a.download = name; a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 60000);
+    return;
+  }
+  const id = nat.begin(name, blob.type || 'application/octet-stream');
+  if (!id) throw new Error('No se ha podido guardar');
+  const step = 3 * 128 * 1024; // múltiplo de 3: cada trozo es base64 completo
+  for (let i = 0; i < blob.size; i += step) {
+    const u = new Uint8Array(await blob.slice(i, i + step).arrayBuffer());
+    let bin = '';
+    for (let k = 0; k < u.length; k += 0x8000) bin += String.fromCharCode(...u.subarray(k, k + 0x8000));
+    if (!nat.chunk(id, btoa(bin))) throw new Error('No se ha podido guardar');
+  }
+  nat.end(id, open);
+}
 async function blobFor(l, f) {
   let blob = await store.getBlob(l.id);
   if (blob) return blob;
@@ -744,9 +764,13 @@ async function attachmentClick(e) {
       const v = document.createElement('div');
       v.id = 'lightbox'; v.innerHTML = `<img src="${url}" alt="${esc(f.name)}"><a href="${url}" download="${esc(f.name)}">Descargar</a>`;
       v.addEventListener('click', (ev) => { if (ev.target.tagName !== 'A') v.remove(); });
+      v.querySelector('a').addEventListener('click', async (ev) => {
+        ev.preventDefault(); ev.stopPropagation();
+        try { await saveBlob(await blobFor(l, f), f.name); } catch (_) { toast('No se ha podido guardar'); }
+      });
       document.body.appendChild(v);
     } else {
-      const a = document.createElement('a'); a.href = url; a.download = f.name; a.click();
+      await saveBlob(await blobFor(l, f), f.name, true);
     }
   } catch (_) { toast('No se ha podido abrir: comprueba la conexión'); }
 }
@@ -866,10 +890,7 @@ $('#exportBtn').addEventListener('click', () => {
     const ts = tasksOf(l.id);
     if (ts.length) md += `# ${l.text}\n` + ts.sort(byPos).map((t) => `- [${t.done ? 'x' : ' '}] ${t.text}` + (t.remind_at ? ` (${new Date(t.remind_at).toLocaleString('es-ES')})` : '') + (t.details ? `\n  ${t.details}` : '')).join('\n') + '\n\n---\n\n';
   }
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(new Blob([md], { type: 'text/markdown' }));
-  a.download = `notas-${new Date().toISOString().slice(0, 10)}.md`;
-  a.click();
+  saveBlob(new Blob([md], { type: 'text/markdown' }), `notas-${new Date().toISOString().slice(0, 10)}.md`).catch(() => toast('No se ha podido guardar'));
 });
 document.addEventListener('keydown', (e) => {
   const mod = isMac ? e.metaKey : e.ctrlKey;
@@ -887,6 +908,7 @@ function applyTheme(t) {
   $('#themeBtn').textContent = 'Tema: ' + THEMES[t];
   const dark = t === 'dark' || (t === 'auto' && darkQuery.matches);
   document.querySelectorAll('meta[name="theme-color"]').forEach((m) => { m.content = dark ? '#000000' : '#f2f2f7'; });
+  try { window.NotasAndroid?.setDark(dark); } catch (_) {} // barras del sistema en el APK
 }
 $('#themeBtn').addEventListener('click', () => {
   const keys = Object.keys(THEMES), next = keys[(keys.indexOf(getTheme()) + 1) % keys.length];

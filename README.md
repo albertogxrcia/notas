@@ -52,3 +52,12 @@ crear y editar notas y tareas, poner avisos y adjuntar ficheros. A propósito no
 
 `node scripts/importar-google-tasks.mjs [takeout.zip]` enseña el recuento; con `--aplica` escribe.
 Se puede repetir sin duplicar. No crea eventos en Calendar: Google ya muestra allí sus tareas con fecha.
+
+## APK de Android
+
+`android/build.sh` compila el APK sin Gradle (`android/build/Notas.apk`) y se instala con `adb install -r`.
+Es un envoltorio nativo de la web publicada: los cambios de la app llegan solos, sin reinstalar.
+Para sacar una versión nueva del envoltorio: `VERSION_CODE=2 VERSION_NAME=1.1 android/build.sh`.
+
+**No perder** `android/notas-release.jks` ni `NOTAS_KS_PASS` del `.env`: sin esa firma Android no deja actualizar
+la app y habría que desinstalarla. No están en git; conviene guardar una copia aparte.

@@ -1,5 +1,5 @@
 // Guarda la app para que abra sin conexión. Los datos van por IndexedDB, no por aquí.
-const V = 'notas-v5';
+const V = 'notas-v6';
 const LIB = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.112.4/dist/umd/supabase.js';
 const SHELL = ['./', 'index.html', 'style.css', 'app.js', 'tasks.js', 'config.js', LIB, 'manifest.webmanifest', 'icon.svg', 'icon-192.png', 'icon-512.png'];
 self.addEventListener('install', (e) => { e.waitUntil(caches.open(V).then((c) => c.addAll(SHELL.map((u) => new Request(u, { cache: 'reload' }))))); self.skipWaiting(); });
