@@ -35,6 +35,8 @@
     <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.2V12l3.2 2"/></symbol>
     <symbol id="i-more" viewBox="0 0 24 24"><circle cx="5.5" cy="12" r="1.1" fill="currentColor"/><circle cx="12" cy="12" r="1.1" fill="currentColor"/><circle cx="18.5" cy="12" r="1.1" fill="currentColor"/></symbol>
     <symbol id="i-details" viewBox="0 0 24 24"><path d="M4.5 7h15M4.5 12h15M4.5 17h9"/></symbol>
+    <symbol id="i-clip" viewBox="0 0 24 24"><path d="M20 11.5l-8 8a5 5 0 0 1-7.1-7.1l8.6-8.6a3.4 3.4 0 0 1 4.8 4.8l-8.6 8.6a1.7 1.7 0 0 1-2.4-2.4l7.9-7.9"/></symbol>
+    <symbol id="i-book" viewBox="0 0 24 24"><path d="M12 6.5C10.3 5 7.8 4.5 4 4.8v13.7c3.8-.3 6.3.2 8 1.7 1.7-1.5 4.2-2 8-1.7V4.8c-3.8-.3-6.3.2-8 1.7zM12 6.5v13.7"/></symbol>
   </defs>
 </svg>
 
@@ -88,7 +90,9 @@
       <button class="backb" data-go="list"><svg><use href="#i-back"/></svg><span id="backName">Notas</span></button>
       <span class="spacer"></span>
       <button class="ib desk" data-act="task" title="Lista de tareas (⌘⇧L)"><svg><use href="#i-check"/></svg></button>
-      <button class="ib desk" data-act="remind" title="Recordatorio"><svg><use href="#i-bell"/></svg></button>
+      <button class="ib desk" data-act="remind" title="Recordatorio en esta línea"><svg><use href="#i-bell"/></svg></button>
+      <button class="ib desk" data-act="attach" title="Adjuntar fichero o imagen"><svg><use href="#i-clip"/></svg></button>
+      <button class="ib" data-act="readRemind" title="Recordarme leer esta nota"><svg><use href="#i-book"/></svg></button>
       <button class="ib" data-act="pin" title="Fijar"><svg><use href="#i-pin"/></svg></button>
       <label class="ib movesel" title="Mover a carpeta"><svg><use href="#i-move"/></svg><select id="moveSel"></select></label>
       <button class="ib" data-act="delete" title="Eliminar"><svg><use href="#i-trash"/></svg></button>
@@ -99,6 +103,10 @@
       <button id="restoreBtn" class="link">Recuperar</button>
       <button id="purgeBtn" class="link danger">Borrar del todo</button>
     </div>
+    <div id="readBar" class="readbar" hidden>
+      <svg><use href="#i-book"/></svg><span class="rtext"></span><span class="spacer"></span>
+      <button id="readEdit" class="link">Cambiar</button><button id="readRepeat" class="link">Repetir</button><button id="readDone" class="link strong">Leída</button>
+    </div>
     <div id="scroller" class="scroll">
       <div id="noteDate" class="notedate"></div>
       <div id="lines"></div>
@@ -107,7 +115,9 @@
     <footer class="tb">
       <button class="ib" data-act="task" title="Lista de tareas"><svg><use href="#i-check"/></svg></button>
       <span class="spacer"></span>
-      <button class="ib" data-act="remind" title="Recordatorio"><svg><use href="#i-bell"/></svg></button>
+      <button class="ib" data-act="attach" title="Adjuntar fichero o imagen"><svg><use href="#i-clip"/></svg></button>
+      <span class="spacer"></span>
+      <button class="ib" data-act="remind" title="Recordatorio en esta línea"><svg><use href="#i-bell"/></svg></button>
       <span class="spacer"></span>
       <button class="ib" data-act="newNote" title="Nota nueva"><svg><use href="#i-compose"/></svg></button>
     </footer>
@@ -125,6 +135,7 @@
   <button data-r="none" class="danger">Quitar recordatorio</button>
 </div>
 <div id="veil" hidden></div>
+<input id="filePicker" type="file" multiple hidden>
 
 <div id="auth" hidden>
   <form id="authForm">

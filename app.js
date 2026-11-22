@@ -39,15 +39,23 @@ const store = {
   db: null,
   open() {
     return new Promise((res, rej) => {
-      const r = indexedDB.open('notas', 1);
-      r.onupgradeneeded = () => { r.result.createObjectStore('items', { keyPath: 'id' }); r.result.createObjectStore('meta'); };
-      r.onsuccess = () => { this.db = r.result; res(); };
+      const r = indexedDB.open('notas', 2);
+      r.onupgradeneeded = () => {
+        const d = r.result;
+        if (!d.objectStoreNames.contains('items')) d.createObjectStore('items', { keyPath: 'id' });
+        if (!d.objectStoreNames.contains('meta')) d.createObjectStore('meta');
+        if (!d.objectStoreNames.contains('blobs')) d.createObjectStore('blobs'); // adjuntos, para verlos sin conexión
+      };
+      r.onsuccess = () => { this.db = r.result; this.db.onversionchange = () => this.db.close(); res(); };
       r.onerror = () => rej(r.error);
     });
   },
   req(r) { return new Promise((res, rej) => { r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); }); },
   all() { return this.req(this.db.transaction('items').objectStore('items').getAll()); },
   getMeta() { return this.req(this.db.transaction('meta').objectStore('meta').get('meta')); },
+  getBlob(id) { return this.req(this.db.transaction('blobs').objectStore('blobs').get(id)); },
+  putBlob(id, blob) { return this.req(this.db.transaction('blobs', 'readwrite').objectStore('blobs').put(blob, id)); },
+  delBlob(id) { return this.req(this.db.transaction('blobs', 'readwrite').objectStore('blobs').delete(id)); },
   write(items, meta) {
     return new Promise((res, rej) => {
       const tx = this.db.transaction(['items', 'meta'], 'readwrite');
@@ -58,8 +66,8 @@ const store = {
   },
   clear() {
     return new Promise((res) => {
-      const tx = this.db.transaction(['items', 'meta'], 'readwrite');
-      tx.objectStore('items').clear(); tx.objectStore('meta').clear(); tx.oncomplete = res;
+      const tx = this.db.transaction(['items', 'meta', 'blobs'], 'readwrite');
+      tx.objectStore('items').clear(); tx.objectStore('meta').clear(); tx.objectStore('blobs').clear(); tx.oncomplete = res;
     });
   },
 };
@@ -67,9 +75,10 @@ const store = {
 /* ---------- Estado ---------- */
 const S = {
   items: new Map(),
-  meta: { device: '', cursor: 0, clock: 0, outbox: [], gcal: [] },
+  meta: { device: '', cursor: 0, clock: 0, outbox: [], gcal: [], uploads: [] },
   outbox: new Set(),
   gcal: new Set(),   // líneas cuyo recordatorio hay que llevar a Google Calendar
+  uploads: new Set(), // adjuntos que aún no han subido: su línea espera a que esté el fichero
   dirty: new Set(),
   view: { folder: 'all', note: null, q: '' },
   sb: null,
@@ -84,18 +93,22 @@ function touch(it) {
   children = null; persistSoon(); syncSoon();
 }
 function create(kind, fields) {
-  const it = { id: crypto.randomUUID(), kind, parent_id: null, pos: '', text: '', task: false, done: false, pinned: false, deleted: 0, remind_at: null, details: '', repeat: null, allday: false, color: null, ...fields };
+  const it = { id: crypto.randomUUID(), kind, parent_id: null, pos: '', text: '', task: false, done: false, pinned: false, deleted: 0, remind_at: null, details: '', repeat: null, allday: false, color: null, file: null, ...fields };
   touch(it); if (it.remind_at) S.gcal.add(it.id); return it;
 }
 function update(it, patch) {
   let changed = false;
-  const remindable = it.kind === 'line' || it.kind === 'task';
+  const remindable = it.kind === 'line' || it.kind === 'task' || it.kind === 'note';
   const hadRemind = remindable && it.remind_at;
   for (const k in patch) if (it[k] !== patch[k]) { it[k] = patch[k]; changed = true; }
   if (!changed) return;
   touch(it);
   if (remindable && (hadRemind || it.remind_at)) S.gcal.add(it.id);
   if (it.kind === 'note' && 'deleted' in patch) for (const l of kids(it.id)) if (l.remind_at) S.gcal.add(l.id);
+  if (it.kind === 'line' && 'text' in patch) { // el título de "Leer: …" en Calendar sigue a la primera línea
+    const note = S.items.get(it.parent_id);
+    if (note && note.remind_at && linesOf(note.id)[0]?.id === it.id) S.gcal.add(note.id);
+  }
 }
 
 function kids(parentId) {
@@ -121,7 +134,8 @@ function noteInfo(n) {
   const rest = ls.slice(1).find((l) => l.text.trim());
   return { ls, mod, open, total, title, snippet: rest ? rest.text.trim() : 'Sin texto adicional' };
 }
-const isEmptyNote = (n) => linesOf(n.id).every((l) => !l.text.trim() && !l.remind_at);
+const isEmptyNote = (n) => !n.remind_at && linesOf(n.id).every((l) => !l.text.trim() && !l.remind_at && !l.file);
+const fileOf = (l) => { try { return l.file ? JSON.parse(l.file) : null; } catch (_) { return null; } };
 
 /* ---------- Guardado local ---------- */
 let persistTimer = null;
@@ -131,6 +145,7 @@ async function persist() {
   S.dirty.clear();
   S.meta.outbox = [...S.outbox];
   S.meta.gcal = [...S.gcal];
+  S.meta.uploads = [...S.uploads];
   await store.write(items, S.meta);
 }
 
@@ -139,7 +154,7 @@ let syncTimer = null, syncing = false, again = false, backoff = 2000, channel = 
 function syncSoon(ms = 700) { clearTimeout(syncTimer); syncTimer = setTimeout(sync, ms); }
 function setStatus(s, title) { const el = $('#sync'); el.className = 'sync ' + s; el.title = title; }
 const newer = (a, b) => a.updated_at > b.updated_at || (a.updated_at === b.updated_at && a.device > b.device);
-const FIELDS = ['id', 'kind', 'parent_id', 'pos', 'text', 'task', 'done', 'pinned', 'deleted', 'remind_at', 'details', 'repeat', 'allday', 'color', 'updated_at', 'device'];
+const FIELDS = ['id', 'kind', 'parent_id', 'pos', 'text', 'task', 'done', 'pinned', 'deleted', 'remind_at', 'details', 'repeat', 'allday', 'color', 'file', 'updated_at', 'device'];
 
 async function sync() {
   if (!S.sb || !S.session) { setStatus('off', HAS_CLOUD ? 'Sin sesión' : 'Solo en este dispositivo'); return; }
@@ -148,8 +163,10 @@ async function sync() {
   syncing = true; again = false;
   setStatus('busy', 'Sincronizando…');
   try {
+    // 0. Primero los ficheros: la línea no viaja hasta que su adjunto ya está en la nube
+    await pushUploads();
     // 1. Subir lo pendiente
-    const ids = [...S.outbox];
+    const ids = [...S.outbox].filter((id) => !S.uploads.has(id));
     for (let i = 0; i < ids.length; i += 200) {
       const batch = ids.slice(i, i + 200).map((id) => S.items.get(id)).filter(Boolean);
       const sent = new Map(batch.map((it) => [it.id, it.updated_at]));
@@ -176,7 +193,7 @@ async function sync() {
     // 3. Recordatorios a Google Calendar (solo los que ya están subidos)
     await pushCalendar();
     await persist();
-    if (changed) { children = null; render(); }
+    if (changed) { children = null; render(); openFromHash(); }
     backoff = 2000;
     setStatus(S.outbox.size ? 'busy' : 'ok', S.outbox.size ? 'Cambios pendientes' : 'Sincronizado');
   } catch (e) {
@@ -186,6 +203,18 @@ async function sync() {
   } finally {
     syncing = false;
     if (again) syncSoon(100);
+  }
+}
+
+async function pushUploads() {
+  for (const id of [...S.uploads]) {
+    const l = S.items.get(id), f = l && fileOf(l);
+    const blob = f && !l.deleted ? await store.getBlob(id) : null;
+    if (blob) {
+      const { error } = await S.sb.storage.from('adjuntos').upload(f.path, blob, { contentType: f.type || 'application/octet-stream', upsert: true });
+      if (error) throw error;
+    }
+    S.uploads.delete(id);
   }
 }
 
@@ -259,8 +288,8 @@ function newNote() {
   openNote(n.id); focusLine(l.id, 0); renderSide();
 }
 function purgeNote(n) {
-  for (const l of kids(n.id)) if (l.deleted !== 2) update(l, { deleted: 2, text: '' });
-  update(n, { deleted: 2 });
+  for (const l of kids(n.id)) if (l.deleted !== 2) { dropFile(l); update(l, { deleted: 2, text: '', file: null }); }
+  update(n, { deleted: 2, remind_at: null, repeat: null });
   if (S.view.note === n.id) S.view.note = null;
 }
 
@@ -310,6 +339,7 @@ function renderSide() {
     `<button class="folder${S.view.folder === id ? ' sel' : ''}" data-f="${id}">${icon(ic)}<span class="name">${esc(name)}</span><span class="count">${count || ''}</span><svg class="chev"><use href="#i-chev"/></svg></button>`;
   let h = row('all', 'folder', 'Todas las notas', alive.length) + row('tasks', 'tasks', 'Tareas', openTaskLines().length);
   for (const f of folders()) h += row(f.id, 'folder', f.text || 'Sin nombre', alive.filter((n) => n.parent_id === f.id).length);
+  h += row('read', 'book', 'Para leer', alive.filter((n) => n.remind_at).length);
   h += row('trash', 'trash', 'Eliminadas', ns.filter((n) => n.deleted === 1).length);
   $('#folders').innerHTML = h;
   const sel = $('#moveSel');
@@ -322,6 +352,7 @@ function folderTitle() {
   const f = S.view.folder, fo = S.items.get(f);
   if (f === 'tasks') return 'Tareas';
   if (f === 'trash') return 'Eliminadas';
+  if (f === 'read') return 'Para leer';
   if (fo && fo.kind === 'folder' && !fo.deleted) return fo.text || 'Sin nombre';
   S.view.folder = 'all';
   return 'Todas las notas';
@@ -342,27 +373,27 @@ function renderList() {
 
   if (f === 'tasks') return renderBoard(q);
 
-  const ns = notes().filter((n) => (f === 'trash' ? n.deleted === 1 : n.deleted === 0) && (!isFolder || n.parent_id === f));
+  const ns = notes().filter((n) => (f === 'trash' ? n.deleted === 1 : n.deleted === 0) && (!isFolder || n.parent_id === f) && (f !== 'read' || n.remind_at));
   let infos = ns.map((n) => ({ n, ...noteInfo(n) }));
   if (q) infos = infos.filter((x) => x.ls.some((l) => norm(l.text).includes(q)));
-  infos.sort((a, b) => b.mod - a.mod);
+  infos.sort((a, b) => (f === 'read' ? a.n.remind_at - b.n.remind_at : b.mod - a.mod));
   const count = infos.length === 1 ? '1 nota' : `${infos.length} notas`;
   $('#listCount').textContent = count; $('#countFoot').textContent = count;
 
   const card = (x) => `<button class="note${x.n.id === S.view.note ? ' sel' : ''}" data-n="${x.n.id}">
       <div class="t">${x.total ? `<span class="tc">${x.total - x.open}/${x.total}</span>` : ''}${esc(x.title)}</div>
-      <div class="m"><b>${fmtDate(x.mod)}</b>${esc(x.snippet)}</div></button>`;
+      <div class="m">${x.n.remind_at ? `<span class="nrem${dueInfo(x.n).late ? ' late' : ''}">${icon('book')}${esc(dueInfo(x.n).label)}</span>` : `<b>${fmtDate(x.mod)}</b>`}${esc(x.snippet)}</div></button>`;
   const pinned = f !== 'trash' ? infos.filter((x) => x.n.pinned) : [];
   const sections = [];
   if (pinned.length) sections.push([`<span class="pin">${icon('pin')}</span>Fijadas`, pinned]);
   for (const x of infos) {
     if (pinned.includes(x)) continue;
-    const s = sectionOf(x.mod);
+    const s = f === 'read' ? 'Próximas' : sectionOf(x.mod);
     const last = sections[sections.length - 1];
     if (last && last[0] === s) last[1].push(x); else sections.push([s, [x]]);
   }
   let h = sections.map(([s, xs]) => `<div class="sect${s.includes('pin') ? ' pin' : ''}">${s}</div><div class="cards">${xs.map(card).join('')}</div>`).join('');
-  if (!infos.length) h = `<div class="nores">${q ? 'Ningún resultado' : f === 'trash' ? 'No hay notas eliminadas' : 'No hay notas'}</div>`;
+  if (!infos.length) h = `<div class="nores">${q ? 'Ningún resultado' : f === 'trash' ? 'No hay notas eliminadas' : f === 'read' ? 'Ninguna nota con aviso de lectura' : 'No hay notas'}</div>`;
   $('#notes').innerHTML = h;
 }
 
@@ -376,7 +407,7 @@ function autosize(ta) { ta.style.height = 'auto'; ta.style.height = ta.scrollHei
 function makeLine(id) {
   const el = document.createElement('div');
   el.className = 'line'; el.dataset.id = id;
-  el.innerHTML = '<button class="chk" tabindex="-1" aria-label="Marcar"></button><div class="lc"><textarea rows="1" spellcheck="true"></textarea><button class="rem" tabindex="-1"></button></div>';
+  el.innerHTML = '<button class="chk" tabindex="-1" aria-label="Marcar"></button><div class="lc"><textarea rows="1" spellcheck="true"></textarea><button class="rem" tabindex="-1"></button><div class="att"></div></div>';
   return el;
 }
 function renderEditor(fresh) {
@@ -386,6 +417,7 @@ function renderEditor(fresh) {
   ed.classList.remove('none');
   const ro = n.deleted === 1;
   $('#trashBar').hidden = !ro;
+  renderReadBar(n);
   document.querySelectorAll('[data-act="pin"]').forEach((b) => b.classList.toggle('on', !!n.pinned));
   $('#moveSel').value = n.parent_id || '';
   if (fresh) { linesEl.innerHTML = ''; lastLine = null; }
@@ -398,7 +430,8 @@ function renderEditor(fresh) {
   ls.forEach((l, i) => {
     let el = have.get(l.id);
     if (!el) el = makeLine(l.id); else have.delete(l.id);
-    el.className = 'line' + (i === 0 ? ' title' : '') + (l.task ? ' task' : '') + (l.done ? ' done' : '') + (l.remind_at ? ' hasrem' : '');
+    el.className = 'line' + (i === 0 ? ' title' : '') + (l.task ? ' task' : '') + (l.done ? ' done' : '') + (l.remind_at ? ' hasrem' : '') + (l.file ? ' isfile' : '');
+    renderAttachment(el, l);
     const ta = el.querySelector('textarea');
     ta.readOnly = ro;
     ta.placeholder = i === 0 && ls.length === 1 ? 'Título' : '';
@@ -421,7 +454,7 @@ function renderEditor(fresh) {
 }
 // Síncrono a propósito: si se escribe rápido, la siguiente tecla ya tiene que caer en la línea nueva
 function focusLine(id, at) {
-  const el = linesEl.querySelector(`[data-id="${id}"] textarea`);
+  const el = linesEl.querySelector(`[data-id="${id}"]:not(.isfile) textarea`);
   if (!el) return;
   el.focus();
   const p = at === Infinity ? el.value.length : Math.min(at, el.value.length);
@@ -519,12 +552,19 @@ linesEl.addEventListener('keydown', (e) => {
     if (i === 0) return;
     e.preventDefault();
     const p = ls[i - 1], at = p.text.length;
+    if (p.file) { // un adjunto no se funde con el texto: solo se quita la línea vacía
+      if (line.text) return;
+      update(line, { deleted: 2, remind_at: null });
+      const back = ls.slice(0, i).reverse().find((x) => !x.file);
+      renderEditor(false); if (back) focusLine(back.id, Infinity);
+      return;
+    }
     update(p, { text: p.text + line.text, remind_at: p.remind_at || line.remind_at });
     update(line, { deleted: 2, text: '', remind_at: null });
     renderEditor(false); focusLine(p.id, at); renderListSoon();
     return;
   }
-  if (e.key === 'Delete' && s === ta.value.length && en === s && ls[i + 1]) {
+  if (e.key === 'Delete' && s === ta.value.length && en === s && ls[i + 1] && !ls[i + 1].file) {
     e.preventDefault();
     const nx = ls[i + 1];
     update(line, { text: line.text + nx.text, remind_at: line.remind_at || nx.remind_at });
@@ -533,12 +573,15 @@ linesEl.addEventListener('keydown', (e) => {
     return;
   }
   const oneRow = ta.scrollHeight <= parseFloat(getComputedStyle(ta).lineHeight) * 1.6 + 8;
-  if (e.key === 'ArrowUp' && i > 0 && (s === 0 || oneRow) && !e.shiftKey) { e.preventDefault(); focusLine(ls[i - 1].id, s); }
-  if (e.key === 'ArrowDown' && ls[i + 1] && (s === ta.value.length || oneRow) && !e.shiftKey) { e.preventDefault(); focusLine(ls[i + 1].id, s); }
+  const up = ls.slice(0, i).reverse().find((x) => !x.file), down = ls.slice(i + 1).find((x) => !x.file);
+  if (e.key === 'ArrowUp' && up && (s === 0 || oneRow) && !e.shiftKey) { e.preventDefault(); focusLine(up.id, s); }
+  if (e.key === 'ArrowDown' && down && (s === ta.value.length || oneRow) && !e.shiftKey) { e.preventDefault(); focusLine(down.id, s); }
 });
 
 linesEl.addEventListener('paste', (e) => {
   const c = ctx(e.target); if (!c) return;
+  const pasted = [...(e.clipboardData?.files || [])];
+  if (pasted.length) { e.preventDefault(); attachFiles(pasted); return; }
   const txt = (e.clipboardData || window.clipboardData).getData('text/plain');
   if (!txt || !/\r?\n/.test(txt)) return;
   e.preventDefault();
@@ -563,6 +606,7 @@ linesEl.addEventListener('paste', (e) => {
 
 linesEl.addEventListener('click', (e) => {
   const n = S.items.get(S.view.note);
+  if (e.target.closest('.att')) { attachmentClick(e); return; }
   if (e.target.closest('.chk')) { const c = ctx(e.target); if (c && !n.deleted) toggleDone(c); return; }
   if (e.target.closest('.rem')) { const c = ctx(e.target); if (c && !n.deleted) { lastLine = c.line.id; openMenu(e.target.closest('.rem')); } return; }
 });
@@ -611,12 +655,155 @@ menu.addEventListener('click', (e) => {
 picker.addEventListener('change', () => { if (picker.value) setRemind(new Date(picker.value).getTime()); });
 menu.querySelector('.pick').addEventListener('click', () => { try { picker.showPicker(); } catch (_) { picker.focus(); } });
 
+/* ---------- Adjuntos e imágenes ---------- */
+const MAX_FILE = 25 * 1024 * 1024;
+const objectUrls = new Map();
+const fmtSize = (b) => (b < 1024 * 1024 ? `${Math.max(1, Math.round(b / 1024))} KB` : `${(b / 1048576).toFixed(1)} MB`);
+function toast(msg) {
+  const t = document.createElement('div');
+  t.className = 'toast'; t.textContent = msg; t.setAttribute('role', 'status');
+  document.body.appendChild(t); setTimeout(() => t.remove(), 3800);
+}
+// Fotos del móvil: como mucho 2400 px, para que suban rápido y no llenen el almacenamiento
+async function prepareImage(file) {
+  if (!/^image\/(jpeg|png|webp)$/.test(file.type)) return { blob: file };
+  try {
+    const bmp = await createImageBitmap(file);
+    const k = Math.min(1, 2400 / Math.max(bmp.width, bmp.height));
+    const w = Math.round(bmp.width * k), h = Math.round(bmp.height * k);
+    if (k === 1 && file.size < 2.5e6) { bmp.close(); return { blob: file, w, h }; }
+    const c = document.createElement('canvas'); c.width = w; c.height = h;
+    c.getContext('2d').drawImage(bmp, 0, 0, w, h); bmp.close();
+    const type = file.type === 'image/png' ? 'image/png' : 'image/jpeg';
+    const blob = await new Promise((res) => c.toBlob(res, type, 0.85));
+    return { blob: blob && blob.size < file.size ? blob : file, w, h };
+  } catch (_) { return { blob: file }; }
+}
+async function attachFiles(list) {
+  const n = S.items.get(S.view.note);
+  if (!n || n.deleted || !list.length) return;
+  if (!S.session) { toast('Entra en tu cuenta para adjuntar'); return; }
+  let ls = linesOf(n.id), after = ls.find((l) => l.id === lastLine) || ls[ls.length - 1];
+  for (const file of list) {
+    if (file.size > MAX_FILE) { toast(`${file.name || 'El fichero'} pasa de 25 MB`); continue; }
+    const { blob, w, h } = await prepareImage(file);
+    const id = crypto.randomUUID(), name = file.name || `imagen-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')}.png`;
+    const safe = name.replace(/[^\w.\-]+/g, '_').slice(-80);
+    const meta = { path: `${S.session.user.id}/${id}-${safe}`, name, type: blob.type || file.type || 'application/octet-stream', size: blob.size };
+    if (w) { meta.w = w; meta.h = h; }
+    await store.putBlob(id, blob);
+    S.uploads.add(id);
+    ls = linesOf(n.id);
+    const next = ls[ls.findIndex((l) => l.id === after.id) + 1];
+    after = create('line', { id, parent_id: n.id, pos: between(after.pos, next ? next.pos : ''), text: name, file: JSON.stringify(meta) });
+  }
+  ls = linesOf(n.id);
+  const idx = ls.findIndex((l) => l.id === after.id);
+  let target = ls[idx + 1];
+  if (after.file && (!target || target.file)) target = create('line', { parent_id: n.id, pos: between(after.pos, target ? target.pos : '') });
+  renderEditor(false); renderListSoon();
+  if (target && !target.file) focusLine(target.id, 0);
+}
+async function blobFor(l, f) {
+  let blob = await store.getBlob(l.id);
+  if (blob) return blob;
+  const { data, error } = await S.sb.storage.from('adjuntos').download(f.path);
+  if (error) throw error;
+  await store.putBlob(l.id, data);
+  return data;
+}
+async function urlFor(l, f) {
+  if (!objectUrls.has(l.id)) objectUrls.set(l.id, URL.createObjectURL(await blobFor(l, f)));
+  return objectUrls.get(l.id);
+}
+function renderAttachment(el, l) {
+  const att = el.querySelector('.att'), f = fileOf(l);
+  if (!f) { if (att.dataset.path) { att.innerHTML = ''; delete att.dataset.path; } return; }
+  if (att.dataset.path === f.path) return;
+  att.dataset.path = f.path;
+  const isImg = /^image\//.test(f.type) && f.type !== 'image/heic';
+  const x = '<button class="attx" data-att="del" aria-label="Quitar adjunto">×</button>';
+  att.innerHTML = isImg
+    ? `<button class="attimg" data-att="open" aria-label="Ver ${esc(f.name)}"${f.w ? ` style="aspect-ratio:${f.w}/${f.h}"` : ''}><img alt="${esc(f.name)}"></button>${x}`
+    : `<button class="attfile" data-att="open">${icon('clip')}<span class="an">${esc(f.name)}</span><small>${fmtSize(f.size)}</small></button>${x}`;
+  if (isImg) urlFor(l, f).then((u) => { const i = att.querySelector('img'); if (i) i.src = u; }).catch(() => { att.classList.add('failed'); });
+}
+async function attachmentClick(e) {
+  const b = e.target.closest('[data-att]'), lineEl = e.target.closest('.line');
+  if (!b || !lineEl) return;
+  const l = S.items.get(lineEl.dataset.id), f = fileOf(l);
+  if (b.dataset.att === 'del') {
+    if (!confirm(`¿Quitar «${f.name}» de la nota? Se borra el fichero.`)) return;
+    dropFile(l); update(l, { deleted: 2, text: '', file: null });
+    renderEditor(false); renderListSoon();
+    return;
+  }
+  try {
+    const url = await urlFor(l, f);
+    if (/^image\//.test(f.type) && f.type !== 'image/heic') {
+      const v = document.createElement('div');
+      v.id = 'lightbox'; v.innerHTML = `<img src="${url}" alt="${esc(f.name)}"><a href="${url}" download="${esc(f.name)}">Descargar</a>`;
+      v.addEventListener('click', (ev) => { if (ev.target.tagName !== 'A') v.remove(); });
+      document.body.appendChild(v);
+    } else {
+      const a = document.createElement('a'); a.href = url; a.download = f.name; a.click();
+    }
+  } catch (_) { toast('No se ha podido abrir: comprueba la conexión'); }
+}
+function dropFile(l) {
+  const f = fileOf(l);
+  if (!f) return;
+  S.uploads.delete(l.id); store.delBlob(l.id).catch(() => {});
+  if (objectUrls.has(l.id)) { URL.revokeObjectURL(objectUrls.get(l.id)); objectUrls.delete(l.id); }
+  if (S.sb && S.session) S.sb.storage.from('adjuntos').remove([f.path]).catch(() => {});
+}
+$('#filePicker').addEventListener('change', (e) => { attachFiles([...e.target.files]); e.target.value = ''; });
+const editorEl = $('#editor');
+['dragenter', 'dragover'].forEach((ev) => editorEl.addEventListener(ev, (e) => { if ([...(e.dataTransfer?.types || [])].includes('Files') && S.view.note) { e.preventDefault(); editorEl.classList.add('dropping'); } }));
+editorEl.addEventListener('dragleave', (e) => { if (!editorEl.contains(e.relatedTarget)) editorEl.classList.remove('dropping'); });
+editorEl.addEventListener('drop', (e) => { editorEl.classList.remove('dropping'); if (e.dataTransfer?.files?.length) { e.preventDefault(); attachFiles([...e.dataTransfer.files]); } });
+
+/* ---------- Recordatorio para leer una nota ---------- */
+function renderReadBar(n) {
+  const bar = $('#readBar');
+  bar.hidden = !n.remind_at || n.deleted !== 0;
+  if (bar.hidden) return;
+  const d = dueInfo(n), rep = repeatLabel(n);
+  bar.querySelector('.rtext').textContent = `Leer: ${d.label}${rep ? ' · ' + rep : ''}`;
+  bar.classList.toggle('late', d.late);
+}
+$('#readDone').addEventListener('click', () => {
+  const n = S.items.get(S.view.note), r = parseRepeat(n);
+  if (r) {
+    let next = addInterval(n.remind_at, r);
+    while (next < Date.now()) next = addInterval(next, r);
+    const count = (r.done || 0) + 1;
+    const ended = (r.end === 'after' && count >= r.count) || (r.end === 'on' && r.until && startOfDay(new Date(next)) > new Date(r.until + 'T00:00').getTime());
+    update(n, ended ? { remind_at: null, allday: false, repeat: null } : { remind_at: next, repeat: JSON.stringify({ ...r, done: count }) });
+  } else update(n, { remind_at: null, allday: false });
+  render();
+});
+$('#readEdit').addEventListener('click', () => dateSheet(S.items.get(S.view.note)));
+$('#readRepeat').addEventListener('click', () => repeatSheet(S.items.get(S.view.note)));
+function openFromHash() {
+  const m = location.hash.match(/^#n=([0-9a-f-]{36})$/i);
+  if (!m) return;
+  const n = S.items.get(m[1]);
+  if (!n || n.kind !== 'note' || n.deleted === 2) return;
+  history.replaceState(history.state, '', location.pathname + location.search);
+  S.view.folder = n.deleted === 1 ? 'trash' : 'all';
+  render(); openNote(n.id);
+}
+addEventListener('hashchange', openFromHash);
+
 /* ---------- Botones ---------- */
 const actions = {
   newNote,
   newFolder() { go('side'); $('#newFolderForm').hidden = false; $('#newFolderInput').focus(); },
   task() { const c = activeLine(false); if (!c) return; if (c.i === 0) { activeLine(true); return; } toggleTask(c); focusLine(c.line.id, Infinity); },
   remind(btn) { if (S.items.get(S.view.note)?.deleted === 0) openMenu(btn); },
+  attach() { if (S.items.get(S.view.note)?.deleted === 0) $('#filePicker').click(); },
+  readRemind() { const n = S.items.get(S.view.note); if (n && n.deleted === 0) dateSheet(n); },
   pin() { const n = S.items.get(S.view.note); update(n, { pinned: !n.pinned }); render(); },
   delete() {
     const n = S.items.get(S.view.note); if (!n || n.deleted === 1) return;
@@ -672,7 +859,7 @@ $('#folderDelBtn').addEventListener('click', () => {
 $('#exportBtn').addEventListener('click', () => {
   let md = '';
   for (const n of notes().filter((n) => n.deleted === 0)) {
-    md += linesOf(n.id).map((l, i) => (i === 0 ? '# ' : '') + (l.task ? `- [${l.done ? 'x' : ' '}] ` : '') + l.text +
+    md += linesOf(n.id).map((l, i) => (i === 0 ? '# ' : '') + (l.task ? `- [${l.done ? 'x' : ' '}] ` : '') + (l.file ? `[adjunto: ${l.text}]` : l.text) +
       (l.remind_at ? ` (aviso: ${new Date(l.remind_at).toLocaleString('es-ES')})` : '')).join('\n') + '\n\n---\n\n';
   }
   for (const l of taskLists()) {
@@ -733,6 +920,7 @@ async function boot() {
   if (meta) S.meta = meta; else S.meta.device = crypto.randomUUID().slice(0, 8);
   S.outbox = new Set(S.meta.outbox || []);
   S.gcal = new Set(S.meta.gcal || []);
+  S.uploads = new Set(S.meta.uploads || []);
   for (const it of await store.all()) S.items.set(it.id, it);
   // Eliminadas hace más de 30 días: fuera, como en Notas
   const limit = Date.now() - 30 * DAY;
@@ -741,6 +929,7 @@ async function boot() {
   app.dataset.pane = 'list';
   history.replaceState({ pane: 'list' }, '');
   render();
+  openFromHash();
 
   setStatus(HAS_CLOUD ? 'busy' : 'off', HAS_CLOUD ? 'Conectando…' : 'Solo en este dispositivo');
   if (HAS_CLOUD) {
@@ -762,4 +951,4 @@ async function boot() {
   setInterval(() => { syncSoon(0); if (S.view.folder === 'tasks') renderList(); }, 30000);
   if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('sw.js');
 }
-boot();
+addEventListener('DOMContentLoaded', boot); // cuando tasks.js ya está cargado

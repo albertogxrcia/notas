@@ -414,3 +414,39 @@ svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width:
   .tsheet input:not([type="radio"]), .tsheet select { font-size: 16px; padding: 9px 10px; }
   .sbtn { padding: 10px 15px; font-size: 16px; }
 }
+
+/* ---------- Adjuntos ---------- */
+.att { display: none; position: relative; max-width: 100%; }
+.line.isfile { margin: 6px 0; }
+.line.isfile .att { display: inline-block; }
+.line.isfile textarea, .line.isfile .chk, .line.isfile .rem { display: none !important; }
+.attimg { display: block; max-width: min(100%, 520px); max-height: 420px; border-radius: 10px; overflow: hidden; background: var(--hover); cursor: zoom-in; }
+.attimg img { display: block; width: 100%; height: 100%; max-height: 420px; object-fit: contain; }
+.att.failed .attimg { min-width: 180px; min-height: 80px; }
+.attfile { display: inline-flex; align-items: center; gap: 8px; max-width: 100%; padding: 9px 12px; border-radius: 10px; background: var(--hover); text-align: left; }
+.attfile svg { width: 18px; height: 18px; color: var(--tint-strong); }
+.attfile .an { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 14px; font-weight: 500; }
+.attfile small { flex: none; color: var(--muted); font-size: 12px; }
+.attx { position: absolute; top: -7px; right: -7px; width: 22px; height: 22px; border-radius: 50%; background: var(--text); color: var(--pane); font-size: 15px; line-height: 20px; opacity: 0; }
+.line:hover .attx, .attx:focus-visible { opacity: 1; }
+#editor.dropping #scroller { outline: 2px dashed var(--tint); outline-offset: -8px; border-radius: 12px; }
+#lightbox { position: fixed; inset: 0; z-index: 50; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; padding: 16px; background: rgba(0, 0, 0, .88); cursor: zoom-out; }
+#lightbox img { max-width: 100%; max-height: calc(100% - 48px); object-fit: contain; border-radius: 6px; }
+#lightbox a { color: #fff; font-size: 15px; font-weight: 600; padding: 6px 14px; border-radius: 16px; background: rgba(255, 255, 255, .16); text-decoration: none; }
+.toast { position: fixed; left: 50%; bottom: calc(24px + env(safe-area-inset-bottom)); transform: translateX(-50%); z-index: 60; max-width: calc(100% - 32px); padding: 10px 16px; border-radius: 12px; background: var(--text); color: var(--pane); font-size: 14px; }
+
+/* ---------- Para leer ---------- */
+.readbar { display: flex; align-items: center; gap: 10px; flex: none; padding: 7px 16px; background: var(--chip); font-size: 13px; color: var(--tint-strong); }
+.readbar svg { width: 16px; height: 16px; }
+.readbar.late, .readbar.late .rtext { color: var(--danger); }
+.readbar .rtext { font-weight: 600; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.readbar .link { flex: none; font-size: 13px; }
+.readbar .link.strong { font-weight: 700; }
+.note .nrem { display: inline-flex; align-items: center; gap: 3px; margin-right: 6px; color: var(--tint-strong); font-weight: 500; }
+.note .nrem svg { width: 13px; height: 13px; }
+.note .nrem.late { color: var(--danger); }
+@media (max-width: 899px) {
+  .attx { opacity: 1; }
+  .readbar, .readbar .link { font-size: 15px; }
+  .note .nrem svg { width: 15px; height: 15px; }
+}

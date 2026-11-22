@@ -187,7 +187,7 @@ function renderBoard(q) {
   const label = total === 1 ? '1 tarea' : `${total} tareas`;
   $('#listCount').textContent = label; $('#countFoot').textContent = label;
 }
-const repaint = () => { renderList(); renderSide(); };
+const repaint = () => { renderList(); renderSide(); if (S.view.folder !== 'tasks') renderEditor(false); };
 function focusTask(id) {
   const el = $('#notes').querySelector(`[data-task="${id}"] [data-field="title"]`);
   if (el) { el.focus(); el.setSelectionRange(el.value.length, el.value.length); }
