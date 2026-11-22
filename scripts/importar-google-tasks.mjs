@@ -33,6 +33,16 @@ function dueMs(iso) {
   const p = Object.fromEntries(new Intl.DateTimeFormat('en-US', { timeZone: 'Europe/Madrid', hourCycle: 'h23', year: 'numeric', month: 'numeric', day: 'numeric', hour: 'numeric', minute: 'numeric' }).formatToParts(new Date(guess)).map((x) => [x.type, x.value]));
   return guess - (Date.UTC(+p.year, +p.month - 1, +p.day, +p.hour, +p.minute) - guess);
 }
+// Takeout trae la fecha en scheduled_time (instante) y a veces un vencimiento en due (día).
+// A las 00:00 de Madrid es una fecha sin hora: se guarda a las 9:00 para que Calendar pueda avisar.
+function dateOf(t) {
+  const st = (t.scheduled_time || []).find((x) => x.current) || (t.scheduled_time || [])[0];
+  if (!st) return t.due ? { remind_at: dueMs(t.due), allday: true } : { remind_at: null, allday: false };
+  const ms = Date.parse(st.start);
+  const p = Object.fromEntries(new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Madrid', hourCycle: 'h23', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }).formatToParts(new Date(ms)).map((x) => [x.type, x.value]));
+  if (p.hour === '00' && p.minute === '00') return { remind_at: dueMs(`${p.year}-${p.month}-${p.day}`), allday: true };
+  return { remind_at: ms, allday: false };
+}
 async function sql(query) {
   const r = await fetch(`https://api.supabase.com/v1/projects/${env.SUPABASE_PROJECT_REF}/database/query`, { method: 'POST', headers: { Authorization: `Bearer ${env.SUPABASE_ACCESS_TOKEN}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ query }) });
   const t = await r.text();
@@ -45,25 +55,27 @@ const lists = (data.items || data.lists || []).filter((l) => Array.isArray(l.ite
 const [{ id: user } = {}] = await sql(`select id from auth.users where email = '${EMAIL}'`);
 if (!user) throw new Error('No existe la cuenta');
 const rows = [], resumen = [];
-let subtareas = 0, repetidas = 0;
+let subtareas = 0, ocultas = 0, vacias = 0;
 lists.forEach((l, li) => {
   const isDefault = /^(mis tareas|my tasks)$/i.test((l.title || '').trim());
   const listId = isDefault ? user : uuid('list:' + (l.id || l.title));
   rows.push({ id: listId, kind: 'list', pos: isDefault ? '' : key(li), text: l.title || 'Sin nombre', color: COLORS[li % COLORS.length], updated_at: 1, device: 'google-tasks' });
-  const ts = (l.items || []).filter((t) => !t.deleted && (t.title || t.notes));
+  // PAST_HIDDEN: repeticiones pasadas que Google ya no enseña. Se quedan fuera para que coincida con lo que ves.
+  ocultas += (l.items || []).filter((t) => t.visibility === 'PAST_HIDDEN').length;
+  vacias += (l.items || []).filter((t) => t.visibility !== 'PAST_HIDDEN' && !t.title && !t.notes).length;
+  const ts = (l.items || []).filter((t) => !t.deleted && t.visibility !== 'PAST_HIDDEN' && (t.title || t.notes));
   const tops = ts.filter((t) => !t.parent).sort((a, b) => String(a.position || '').localeCompare(String(b.position || '')));
   const ordered = tops.flatMap((t) => [t, ...ts.filter((c) => c.parent === t.id).sort((a, b) => String(a.position || '').localeCompare(String(b.position || '')))]);
   for (const t of ts) if (!ordered.includes(t)) ordered.push(t);
   ordered.forEach((t, i) => {
     if (t.parent) subtareas++;
-    if (t.recurrence || t.task_recurrence) repetidas++;
     const done = t.status === 'completed' || !!t.completed;
-    rows.push({ id: uuid('task:' + (t.id || `${l.title}:${i}:${t.title}`)), kind: 'task', parent_id: listId, pos: key(i), text: (t.title || '(sin título)').replace(/\s*\n\s*/g, ' '), details: t.notes || '', done, pinned: !!t.starred, remind_at: t.due ? dueMs(t.due) : null, allday: !!t.due, updated_at: Date.parse(t.completed || t.updated || '') || 2, device: 'google-tasks' });
+    rows.push({ id: uuid('task:' + (t.id || `${l.title}:${i}:${t.title}`)), kind: 'task', parent_id: listId, pos: key(i), text: (t.title || '(sin título)').replace(/\s*\n\s*/g, ' '), details: t.notes || '', done, pinned: !!t.starred, ...dateOf(t), updated_at: Date.parse(t.completed || t.updated || '') || 2, device: 'google-tasks' });
   });
   resumen.push({ lista: l.title, pendientes: ordered.filter((t) => t.status !== 'completed' && !t.completed).length, completadas: ordered.filter((t) => t.status === 'completed' || t.completed).length });
 });
 console.table(resumen);
-console.log(`Total: ${rows.filter((r) => r.kind === 'task').length} tareas en ${resumen.length} listas · ${subtareas} subtareas (quedan debajo de su tarea, sin sangría) · ${repetidas} con repetición (no se importa la regla)`);
+console.log(`Total: ${rows.filter((r) => r.kind === 'task').length} tareas en ${resumen.length} listas · ${subtareas} subtareas · ${ocultas} repeticiones pasadas ocultas en Google, fuera · ${vacias} vacías, fuera`);
 if (!apply) { console.log('Prueba: no se ha escrito nada. Añade --aplica.'); process.exit(0); }
 for (let i = 0; i < rows.length; i += 120) {
   const tag = 'j' + createHash('md5').update(String(i) + Date.now()).digest('hex').slice(0, 10);
